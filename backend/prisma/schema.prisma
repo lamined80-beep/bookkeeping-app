@@ -81,6 +81,7 @@ model Company {
   vehicles                Vehicle[]
   documents               Document[]
   audit_logs              AuditLog[]
+  expense_categories      ExpenseCategory[]
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
