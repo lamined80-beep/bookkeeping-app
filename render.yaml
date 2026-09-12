@@ -27,7 +27,7 @@ services:
       - key: VITE_API_URL
         fromService:
           name: bookkeeping-backend
-            type: web_service
+        type: web_service
           property: renderURL
       - key: NODE_ENV
         value: production
