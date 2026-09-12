@@ -95,11 +95,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
           {[
-            { icon: '📄', label: 'New Invoice', to: '/invoices/new' },
-            { icon: '💰', label: 'New Expense', to: '/expenses/new' },
-            { icon: '👥', label: 'Add Client', to: '/clients/new' },
+            { icon: '📄', label: 'New Invoice', to: '/invoices' },
+            { icon: '👥', label: 'Add Client', to: '/clients' },
           ].map((action) => (
             <Link
               key={action.label}
@@ -120,9 +119,9 @@ export default function DashboardPage() {
             <span className="text-blue-600 text-sm font-medium">View all →</span>
           </Link>
 
-          <Link to="/reports/trial-balance" className="card p-6 hover:border-blue-400 transition">
-            <h3 className="font-semibold text-lg mb-2">Reports</h3>
-            <p className="text-gray-600 text-sm mb-4">Trial balance, P&L, and more</p>
+          <Link to="/clients" className="card p-6 hover:border-blue-400 transition">
+            <h3 className="font-semibold text-lg mb-2">Clients</h3>
+            <p className="text-gray-600 text-sm mb-4">Manage your client list</p>
             <span className="text-blue-600 text-sm font-medium">View all →</span>
           </Link>
         </div>
