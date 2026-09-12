@@ -277,7 +277,7 @@ router.get('/dashboard/kpis', async (req: AuthRequest, res: Response<ApiResponse
     const unpaidInvoices = await prisma.invoice.findMany({
       where: {
         company_id: req.user.companyId,
-        status: { in: ['UNPAID', 'PARTIAL', 'OVERDUE'] },
+        status: { in: ['SENT', 'VIEWED', 'PARTIAL', 'OVERDUE'] },
       },
     });
 
