@@ -335,7 +335,7 @@ router.post('/:id/payments', async (req: AuthRequest, res: Response<ApiResponse>
         ? 'PAID'
         : newAmountPaid > 0
           ? 'PARTIAL'
-          : 'UNPAID';
+          : 'SENT';
 
     const updatedInvoice = await prisma.invoice.update({
       where: { id: req.params.id },
