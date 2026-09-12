@@ -1,0 +1,663 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== AUTHENTICATION & USERS =====
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  password_hash     String
+  name              String
+  company_id        String
+  role              UserRole  @default(ACCOUNTANT)
+  is_email_verified Boolean   @default(false)
+  is_active         Boolean   @default(true)
+
+  // Relations
+  company            Company                @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  audit_logs         AuditLog[]
+  journal_entries    JournalEntry[]         @relation("posted_by")
+  bank_reconciliations BankReconciliation[]  @relation("completed_by")
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([company_id])
+  @@index([email])
+}
+
+enum UserRole {
+  OWNER
+  ACCOUNTANT
+}
+
+// ===== COMPANY & SETUP =====
+
+model Company {
+  id                      String    @id @default(uuid())
+  name                    String
+  business_number         String?
+  country                 String    @default("CA")
+  province                String
+  fiscal_year_start_month Int       @default(1) // 1-12
+  currency                String    @default("CAD")
+
+  // Tax Configuration
+  gst_hst_registered      Boolean   @default(false)
+  gst_hst_number          String?
+  gst_hst_rate            Decimal   @default(0) @db.Decimal(5, 2) // 0, 5, 13, 14, 15
+  pst_rate                Decimal   @default(0) @db.Decimal(5, 2)
+  qst_rate                Decimal   @default(0) @db.Decimal(5, 2)
+
+  // Invoice Configuration
+  invoice_prefix          String    @default("INV")
+  next_invoice_number     Int       @default(1001)
+  invoice_payment_terms   String    @default("Net 30")
+
+  // Logo & Branding
+  logo_storage_path       String?
+  invoice_footer_text     String?
+
+  // Relations
+  users                   User[]
+  clients                 Client[]
+  suppliers               Supplier[]
+  estimates               Estimate[]
+  invoices                Invoice[]
+  expenses                Expense[]
+  bills                   Bill[]
+  chart_of_accounts       ChartOfAccount[]
+  journal_entries         JournalEntry[]
+  bank_accounts           BankAccount[]
+  vehicles                Vehicle[]
+  documents               Document[]
+  audit_logs              AuditLog[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+
+// ===== CLIENTS & SALES =====
+
+model Client {
+  id            String  @id @default(uuid())
+  company_id    String
+  name          String
+  email         String?
+  phone         String?
+  billing_address String?
+  service_address String?
+  tax_id        String?
+
+  // Relations
+  company       Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  estimates     Estimate[]
+  invoices      Invoice[]
+  expenses      Expense[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([company_id, name])
+  @@index([company_id])
+}
+
+model Estimate {
+  id              String  @id @default(uuid())
+  company_id      String
+  client_id       String
+  estimate_number String
+  issue_date      DateTime
+  expiry_date     DateTime?
+  status          EstimateStatus @default(DRAFT)
+
+  subtotal_cents  Int     // in cents
+  tax_cents       Int
+  total_cents     Int
+
+  notes           String?
+  pdf_storage_path String?
+
+  // Relations
+  company         Company         @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  client          Client          @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  lines           EstimateLine[]
+  invoices        Invoice[]       @relation("from_estimate")
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([company_id, estimate_number])
+  @@index([company_id])
+  @@index([client_id])
+}
+
+enum EstimateStatus {
+  DRAFT
+  ACCEPTED
+  REJECTED
+  CONVERTED
+}
+
+model EstimateLine {
+  id          String  @id @default(uuid())
+  estimate_id String
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unit_price_cents Int
+  line_total_cents Int
+
+  estimate    Estimate @relation(fields: [estimate_id], references: [id], onDelete: Cascade)
+
+  @@index([estimate_id])
+}
+
+model Invoice {
+  id              String  @id @default(uuid())
+  company_id      String
+  client_id       String
+  estimate_id     String?
+  invoice_number  String
+  issue_date      DateTime
+  due_date        DateTime
+  status          InvoiceStatus @default(DRAFT)
+
+  subtotal_cents  Int
+  gst_hst_cents   Int
+  other_tax_cents Int
+  total_cents     Int
+  amount_paid_cents Int @default(0)
+
+  payment_terms   String?
+  notes           String?
+  pdf_storage_path String?
+
+  // Relations
+  company         Company         @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  client          Client          @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  estimate        Estimate?       @relation("from_estimate", fields: [estimate_id], references: [id])
+  lines           InvoiceLine[]
+  payments        PaymentReceived[]
+  journal_entries JournalEntry[]  @relation("from_invoice")
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([company_id, invoice_number])
+  @@index([company_id])
+  @@index([client_id])
+  @@index([status])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIAL
+  PAID
+  OVERDUE
+}
+
+model InvoiceLine {
+  id          String  @id @default(uuid())
+  invoice_id  String
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unit_price_cents Int
+  line_total_cents Int
+
+  invoice     Invoice @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+
+  @@index([invoice_id])
+}
+
+model PaymentReceived {
+  id            String  @id @default(uuid())
+  invoice_id    String
+  amount_cents  Int
+  payment_date  DateTime
+  payment_method String // cash, check, transfer, card, other
+  reference     String?
+
+  invoice       Invoice @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+
+  created_at DateTime @default(now())
+
+  @@index([invoice_id])
+}
+
+// ===== SUPPLIERS & EXPENSES =====
+
+model Supplier {
+  id            String  @id @default(uuid())
+  company_id    String
+  name          String
+  email         String?
+  phone         String?
+  billing_address String?
+  tax_id        String?
+
+  // Relations
+  company       Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  bills         Bill[]
+  expenses      Expense[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([company_id, name])
+  @@index([company_id])
+}
+
+model Bill {
+  id              String  @id @default(uuid())
+  company_id      String
+  supplier_id     String
+  bill_number     String
+  issue_date      DateTime
+  due_date        DateTime
+  status          BillStatus @default(DRAFT)
+
+  subtotal_cents  Int
+  gst_hst_cents   Int
+  other_tax_cents Int
+  total_cents     Int
+  amount_paid_cents Int @default(0)
+
+  payment_terms   String?
+  notes           String?
+
+  // Relations
+  company         Company       @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  supplier        Supplier      @relation(fields: [supplier_id], references: [id], onDelete: Cascade)
+  expenses        Expense[]
+  payments        PaymentMade[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([company_id, bill_number])
+  @@index([company_id])
+  @@index([supplier_id])
+}
+
+enum BillStatus {
+  DRAFT
+  RECEIVED
+  PARTIAL
+  PAID
+}
+
+model Expense {
+  id                  String  @id @default(uuid())
+  company_id          String
+  bill_id             String?
+  supplier_id         String?
+  category_id         String
+  client_id           String?
+  description         String
+  amount_cents        Int
+  gst_hst_recoverable_cents Int @default(0)
+  expense_date        DateTime
+  status              ExpenseStatus @default(DRAFT)
+
+  // Document storage (array of Document IDs)
+  receipt_document_ids String[] @default([])
+
+  // Relations
+  company             Company       @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  bill                Bill?         @relation(fields: [bill_id], references: [id])
+  supplier            Supplier?     @relation(fields: [supplier_id], references: [id])
+  category            ExpenseCategory @relation(fields: [category_id], references: [id])
+  client              Client?       @relation(fields: [client_id], references: [id])
+  journal_entries     JournalEntry[] @relation("from_expense")
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([company_id])
+  @@index([expense_date])
+  @@index([status])
+}
+
+enum ExpenseStatus {
+  DRAFT
+  POSTED
+}
+
+model ExpenseCategory {
+  id          String  @id @default(uuid())
+  company_id  String
+  name        String
+  description String?
+  tax_recoverable Boolean @default(false)
+
+  // Relations
+  company     Company   @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  expenses    Expense[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([company_id, name])
+  @@index([company_id])
+}
+
+model PaymentMade {
+  id            String  @id @default(uuid())
+  bill_id       String
+  amount_cents  Int
+  payment_date  DateTime
+  payment_method String
+  reference     String?
+
+  bill          Bill @relation(fields: [bill_id], references: [id], onDelete: Cascade)
+
+  created_at DateTime @default(now())
+
+  @@index([bill_id])
+}
+
+// ===== ACCOUNTING ENGINE =====
+
+model ChartOfAccount {
+  id              String  @id @default(uuid())
+  company_id      String
+  account_number  String
+  account_name    String
+  account_type    AccountType
+  account_subtype String?
+  normal_balance  DebitCredit
+  is_active       Boolean @default(true)
+  description     String?
+
+  // Relations
+  company         Company       @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  journal_lines   JournalLine[]
+  bank_accounts   BankAccount[] @relation("coa_account")
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([company_id, account_number])
+  @@index([company_id])
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum DebitCredit {
+  DEBIT
+  CREDIT
+}
+
+model JournalEntry {
+  id              String  @id @default(uuid())
+  company_id      String
+  entry_date      DateTime
+  description     String
+  entry_type      JournalEntryType
+  reference_id    String? // invoice_id, bill_id, expense_id, etc.
+  posted_by_id    String?
+  is_posted       Boolean @default(false)
+  posted_at       DateTime?
+  can_reverse     Boolean @default(true)
+
+  // Relations
+  company         Company       @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  posted_by       User?         @relation("posted_by", fields: [posted_by_id], references: [id])
+  lines           JournalLine[]
+  invoices        Invoice[]     @relation("from_invoice")
+  expenses        Expense[]     @relation("from_expense")
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([company_id])
+  @@index([is_posted])
+  @@index([entry_date])
+}
+
+enum JournalEntryType {
+  MANUAL
+  AUTO_INVOICE
+  AUTO_PAYMENT
+  AUTO_EXPENSE
+  AUTO_TAX
+  REVERSAL
+}
+
+model JournalLine {
+  id              String  @id @default(uuid())
+  journal_entry_id String
+  account_id      String
+  debit_cents     Int?
+  credit_cents    Int?
+  description     String?
+  position        Int
+
+  journal_entry   JournalEntry   @relation(fields: [journal_entry_id], references: [id], onDelete: Cascade)
+  account         ChartOfAccount @relation(fields: [account_id], references: [id])
+
+  @@unique([journal_entry_id, position])
+  @@index([journal_entry_id])
+  @@index([account_id])
+}
+
+// ===== BANKING =====
+
+model BankAccount {
+  id              String  @id @default(uuid())
+  company_id      String
+  account_name    String
+  account_number  String? // masked
+  bank_name       String
+  opening_balance_cents Int
+  opening_date    DateTime
+  coa_account_id  String
+
+  // Relations
+  company         Company       @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  coa_account     ChartOfAccount @relation("coa_account", fields: [coa_account_id], references: [id])
+  statements      BankStatement[]
+  transactions    BankTransaction[]
+  reconciliations BankReconciliation[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([company_id])
+}
+
+model BankStatement {
+  id              String  @id @default(uuid())
+  bank_account_id String
+  statement_date_from DateTime
+  statement_date_to DateTime
+  opening_balance_cents Int
+  closing_balance_cents Int
+  uploaded_at     DateTime
+  file_path       String?
+  status          StatementStatus @default(PENDING)
+
+  // Relations
+  bank_account    BankAccount     @relation(fields: [bank_account_id], references: [id], onDelete: Cascade)
+  transactions    BankTransaction[]
+
+  created_at DateTime @default(now())
+
+  @@index([bank_account_id])
+}
+
+enum StatementStatus {
+  PENDING
+  IMPORTED
+  RECONCILED
+}
+
+model BankTransaction {
+  id              String  @id @default(uuid())
+  bank_account_id String
+  bank_statement_id String?
+  transaction_date DateTime
+  description     String
+  amount_cents    Int // positive=deposit, negative=withdrawal
+  running_balance_cents Int
+  is_matched      Boolean @default(false)
+  matched_to_id   String? // reference to JournalEntry or Payment
+  is_cleared      Boolean @default(false)
+
+  // Relations
+  bank_account    BankAccount     @relation(fields: [bank_account_id], references: [id], onDelete: Cascade)
+  bank_statement  BankStatement?  @relation(fields: [bank_statement_id], references: [id])
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([bank_account_id])
+  @@index([transaction_date])
+  @@index([is_matched])
+}
+
+model BankReconciliation {
+  id              String  @id @default(uuid())
+  bank_account_id String
+  reconciliation_date DateTime
+  statement_balance_cents Int
+  cleared_transactions_total_cents Int
+  difference_cents Int
+  status          ReconciliationStatus @default(IN_PROGRESS)
+  completed_by_id String?
+  completed_at    DateTime?
+
+  // Relations
+  bank_account    BankAccount @relation(fields: [bank_account_id], references: [id], onDelete: Cascade)
+  completed_by    User?       @relation("completed_by", fields: [completed_by_id], references: [id])
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([bank_account_id])
+  @@index([status])
+}
+
+enum ReconciliationStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+// ===== MILEAGE TRACKING =====
+
+model Vehicle {
+  id                  String  @id @default(uuid())
+  company_id          String
+  make_model          String
+  license_plate       String?
+  year                Int?
+  opening_odometer_km Decimal @db.Decimal(10, 2)
+
+  // Relations
+  company             Company       @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  trips               MileageTrip[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([company_id])
+}
+
+model MileageTrip {
+  id                  String  @id @default(uuid())
+  vehicle_id          String
+  trip_date           DateTime
+  starting_location   String
+  destination         String
+  business_purpose    String
+  kilometres          Decimal @db.Decimal(10, 2)
+  starting_odometer_km Decimal @db.Decimal(10, 2)
+  ending_odometer_km   Decimal @db.Decimal(10, 2)
+  is_business         Boolean @default(true)
+  receipt_document_ids String[] @default([])
+
+  // Relations
+  vehicle             Vehicle @relation(fields: [vehicle_id], references: [id], onDelete: Cascade)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([vehicle_id])
+  @@index([trip_date])
+}
+
+// ===== DOCUMENT MANAGEMENT =====
+
+model Document {
+  id              String  @id @default(uuid())
+  company_id      String
+  user_id         String
+  filename        String
+  file_type       String  // jpg, png, pdf, docx, xlsx, etc.
+  file_size_bytes Int
+  storage_path    String  // S3 key or local path
+  original_filename String
+
+  // Relations
+  company         Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([company_id])
+  @@index([created_at])
+}
+
+// ===== AUDIT & SECURITY =====
+
+model AuditLog {
+  id              String  @id @default(uuid())
+  company_id      String
+  user_id         String
+  action          AuditAction
+  entity_type     String  // invoice, expense, journal_entry, etc.
+  entity_id       String
+  old_values      Json?
+  new_values      Json?
+  ip_address      String?
+  user_agent      String?
+
+  // Relations
+  company         Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  user            User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  timestamp       DateTime @default(now())
+
+  @@index([company_id])
+  @@index([user_id])
+  @@index([entity_type])
+  @@index([timestamp])
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  POST
+  APPROVE
+  REJECT
+  EXPORT
+}

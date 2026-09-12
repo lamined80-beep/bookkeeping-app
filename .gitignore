@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build
+/dist
+/build
+/.next
+/out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Testing
+/coverage
+.nyc_output
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temp files
+/uploads/
+.cache/
+tmp/
+
+# Prisma
+prisma/.env
+prisma/.env.*.local
+
+# Production
+.vercel
+.netlify
