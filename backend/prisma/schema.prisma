@@ -215,6 +215,7 @@ model InvoiceLine {
   quantity    Decimal @db.Decimal(10, 2)
   unit_price_cents Int
   line_total_cents Int
+  position    Int     @default(0)
 
   invoice     Invoice @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
 
